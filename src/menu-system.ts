@@ -2,6 +2,8 @@ import prompts from 'prompts'
 import { privateKeyToAccount } from 'viem/accounts'
 import { ParallelExecutor } from './parallel-executor.js'
 import { logger } from './logger.js'
+import { SoneiumCollector } from './modules/collector.js'
+import { performStargateEthDeposit, performStargateEthWithdraw } from './modules/stargate-eth.js'
 import { performWalletTopup } from './wallet-topup.js'
 import { GasChecker } from './gas-checker.js'
 import { ProxyManager } from './proxy-manager.js'
@@ -133,6 +135,11 @@ export class MenuSystem {
             description: 'Запустить автоматизацию с настройкой потоков (каждый поток - уникальный модуль)'
           },
           {
+            title: 'Сбор балансов в ETH',
+            value: 'collect',
+            description: 'Выполнить collector для всех кошельков один раз'
+          },
+          {
             title: 'Пополнение кошельков',
             value: 'topup',
             description: 'Пополнение кошельков ETH в сети Soneium'
@@ -141,6 +148,11 @@ export class MenuSystem {
             title: 'Статистика',
             value: 'stats',
             description: 'Показать статистику по кошелькам и поинтам'
+          },
+          {
+            title: 'Ликвидность Stargate',
+            value: 'stargate-eth',
+            description: 'Депозит ETH (85–95% баланса) или вывод из Stargate пула'
           },
           {
             title: `Минт бейджа за ${BADGE_MINT_CONFIG.season} сезон`,
@@ -164,10 +176,14 @@ export class MenuSystem {
 
       if (response['action'] === 'start') {
         await this.showThreadSelectionMenu()
+      } else if (response['action'] === 'collect') {
+        await this.executeCollectorForAllWallets()
       } else if (response['action'] === 'topup') {
         await this.showTopupMenu()
       } else if (response['action'] === 'stats') {
         await this.showStatistics()
+      } else if (response['action'] === 'stargate-eth') {
+        await this.showStargateEthMenu()
       } else if (response['action'] === 'season-badge-mint') {
         await this.showSeasonBadgeMintMenu()
       } else if (response['action'] === 'exit') {
@@ -504,6 +520,118 @@ export class MenuSystem {
     } catch (error) {
       logger.error('Ошибка при выборе модулей для работы', error)
       return null
+    }
+  }
+
+  /**
+   * Выполняет модуль collector для всех кошельков в случайном порядке
+   */
+  private async executeCollectorForAllWallets (): Promise<void> {
+    try {
+      console.log('\nСБОР БАЛАНСОВ В ETH')
+      console.log('='.repeat(80))
+
+      // Запрос максимальной цены газа
+      const gasResponse = await prompts({
+        type: 'number',
+        name: 'maxGasPrice',
+        message: 'Максимальная цена газа в ETH mainnet (Gwei):',
+        initial: 5,
+        min: 0.1,
+        max: 100,
+        increment: 0.1,
+        validate: (value: number) => {
+          if (value <= 0) return 'Значение должно быть больше 0'
+          if (value > 100) return 'Максимальное значение: 100 Gwei'
+          return true
+        }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any)
+
+      if (!gasResponse || gasResponse['maxGasPrice'] === undefined) {
+        this.handleCancel()
+        return
+      }
+
+      if (!gasResponse['maxGasPrice']) {
+        console.log('\nНеверное значение газа. Попробуйте снова.')
+        await this.showMainMenu()
+        return
+      }
+
+      const gasChecker = new GasChecker(gasResponse['maxGasPrice'])
+      console.log(`Лимит газа установлен: ${gasResponse['maxGasPrice']} Gwei`)
+
+      const privateKeys = await this.getAllPrivateKeys()
+
+      if (privateKeys.length === 0) {
+        console.log('Не найдено приватных ключей')
+        await this.showMainMenu()
+        return
+      }
+
+      const shuffledKeys = this.shuffleArray(privateKeys)
+
+      console.log(`Найдено ${shuffledKeys.length} кошельков`)
+      console.log('Начинаем сбор...')
+      console.log('Для остановки нажмите Ctrl+C')
+      console.log('='.repeat(80))
+
+      // Выполняем collector для каждого кошелька
+      let successCount = 0
+      let errorCount = 0
+      const startTime = Date.now()
+
+      for (let i = 0; i < shuffledKeys.length; i++) {
+        const privateKey = shuffledKeys[i]!
+        const account = privateKeyToAccount(privateKey)
+
+        console.log(`\nКОШЕЛЕК ${i + 1}/${shuffledKeys.length}:`)
+        console.log('-'.repeat(50))
+        console.log(`Адрес: ${account.address}`)
+
+        try {
+          console.log('Проверяем цену газа...')
+          await gasChecker.waitForGasPriceToDrop()
+
+          const collector = new SoneiumCollector(privateKey)
+          const result = await collector.performCollection()
+
+          if (result.success) {
+            successCount++
+            console.log(`Успешно собрано: ${result.totalCollected} ETH`)
+            console.log(`Собрано токенов: ${result.collectedTokens.length}`)
+            console.log(`Найдена ликвидность в: ${result.liquidityFound.length} протоколах`)
+            console.log(`Выведена ликвидность из: ${result.withdrawnLiquidity.length} протоколов`)
+          } else {
+            errorCount++
+            console.log(`Ошибка: ${result.error}`)
+          }
+        } catch (error) {
+          errorCount++
+          console.log(`Критическая ошибка: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`)
+        }
+
+        if (i < shuffledKeys.length - 1) {
+          console.log('Пауза 3 секунды...')
+          await new Promise(resolve => setTimeout(resolve, 3000))
+        }
+      }
+
+      // Показываем финальную статистику
+      const endTime = Date.now()
+      const totalTime = (endTime - startTime) / 1000
+      this.showCollectorStatistics(successCount, errorCount, shuffledKeys.length, totalTime)
+
+      console.log('\nВозврат в главное меню через 5 секунд...')
+      await new Promise(resolve => setTimeout(resolve, 5000))
+      await this.showMainMenu()
+
+    } catch (error) {
+      logger.error('Ошибка при сборе балансов', error)
+      console.log('\nВозврат в главное меню через 5 секунд...')
+      await new Promise(resolve => setTimeout(resolve, 5000))
+      await this.showMainMenu()
     }
   }
 
@@ -1183,6 +1311,22 @@ export class MenuSystem {
   }
 
   /**
+   * Показывает статистику выполнения collector
+   */
+  private showCollectorStatistics (successCount: number, errorCount: number, totalCount: number, totalTime: number): void {
+    console.log('\nФИНАЛЬНАЯ СТАТИСТИКА СБОРА')
+    console.log('='.repeat(80))
+    console.log(`Всего кошельков: ${totalCount}`)
+    console.log(`Успешно обработано: ${successCount}`)
+    console.log(`Ошибок: ${errorCount}`)
+    console.log(`Общее время: ${totalTime.toFixed(2)} секунд`)
+    console.log(`Процент успеха: ${((successCount / totalCount) * 100).toFixed(1)}%`)
+    console.log('='.repeat(80))
+    console.log('СБОР ЗАВЕРШЕН!')
+    console.log('='.repeat(80))
+  }
+
+  /**
    * Показывает меню пополнения кошельков
    */
   private async showTopupMenu (): Promise<void> {
@@ -1424,6 +1568,231 @@ export class MenuSystem {
     console.log('='.repeat(80))
     console.log('ПОПОЛНЕНИЕ ЗАВЕРШЕНО!')
     console.log('='.repeat(80))
+  }
+
+  /**
+   * Показывает меню Ликвидность Stargate (ETH)
+   */
+  private async showStargateEthMenu (): Promise<void> {
+    try {
+      console.log('\nЛИКВИДНОСТЬ STARGATE (ETH)')
+      console.log('='.repeat(80))
+
+      const actionResponse = await prompts({
+        type: 'select',
+        name: 'action',
+        message: 'Выберите операцию:',
+        choices: [
+          {
+            title: 'Депозит',
+            value: 'deposit',
+            description: 'Внести 85–95% ETH в Stargate пул (генерирует liqScore)'
+          },
+          {
+            title: 'Вывод',
+            value: 'withdraw',
+            description: 'Вывести все S*ETH LP токены обратно в ETH'
+          }
+        ],
+        initial: 0
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any)
+
+      if (!actionResponse || !actionResponse['action']) {
+        this.handleCancel()
+        return
+      }
+
+      const operation = actionResponse['action'] as 'deposit' | 'withdraw'
+
+      const gasResponse = await prompts({
+        type: 'number',
+        name: 'maxGasPrice',
+        message: 'Максимальная цена газа в ETH mainnet (Gwei):',
+        initial: 5,
+        min: 0.1,
+        max: 100,
+        increment: 0.1,
+        validate: (value: number) => {
+          if (value <= 0) return 'Значение должно быть больше 0'
+          if (value > 100) return 'Максимальное значение: 100 Gwei'
+          return true
+        }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any)
+
+      if (!gasResponse || gasResponse['maxGasPrice'] === undefined) {
+        this.handleCancel()
+        return
+      }
+
+      const gasChecker = new GasChecker(gasResponse['maxGasPrice'])
+      console.log(`Лимит газа установлен: ${gasResponse['maxGasPrice']} Gwei`)
+
+      const delayMinResponse = await prompts({
+        type: 'number',
+        name: 'delayMinSec',
+        message: 'Мин. пауза между кошельками (сек):',
+        initial: 30,
+        min: 1,
+        max: 86400,
+        validate: (value: number) => {
+          if (!Number.isFinite(value) || value < 1) return 'Минимум 1 секунда'
+          if (value > 86400) return 'Максимум 86400 сек (24 ч)'
+          return true
+        }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any)
+
+      if (!delayMinResponse || delayMinResponse['delayMinSec'] === undefined) {
+        this.handleCancel()
+        return
+      }
+
+      const delayMaxResponse = await prompts({
+        type: 'number',
+        name: 'delayMaxSec',
+        message: 'Макс. пауза между кошельками (сек):',
+        initial: Math.max(30, Math.floor(delayMinResponse['delayMinSec'])),
+        min: 1,
+        max: 86400,
+        validate: (value: number) => {
+          if (!Number.isFinite(value) || value < 1) return 'Минимум 1 секунда'
+          if (value > 86400) return 'Максимум 86400 сек (24 ч)'
+          if (value < delayMinResponse['delayMinSec']) {
+            return `Не меньше минимума (${delayMinResponse['delayMinSec']} сек)`
+          }
+          return true
+        }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any)
+
+      if (!delayMaxResponse || delayMaxResponse['delayMaxSec'] === undefined) {
+        this.handleCancel()
+        return
+      }
+
+      const delayMinSec = Math.floor(delayMinResponse['delayMinSec'])
+      const delayMaxSec = Math.floor(delayMaxResponse['delayMaxSec'])
+      if (delayMinSec < 1 || delayMaxSec < delayMinSec) {
+        console.log('Некорректный диапазон паузы. Возврат в главное меню.')
+        await this.showMainMenu()
+        return
+      }
+      console.log(`Пауза между кошельками: случайно от ${delayMinSec} до ${delayMaxSec} сек`)
+
+      const privateKeys = await this.getAllPrivateKeys()
+      if (privateKeys.length === 0) {
+        console.log('Не найдено приватных ключей')
+        await this.showMainMenu()
+        return
+      }
+
+      const shuffledKeys = this.shuffleArray(privateKeys)
+      const opLabel = operation === 'deposit' ? 'ДЕПОЗИТ' : 'ВЫВОД'
+      console.log(`\n${opLabel} для ${shuffledKeys.length} кошельков`)
+      console.log('Для остановки нажмите Ctrl+C')
+      console.log('='.repeat(80))
+
+      let successCount = 0
+      let skippedCount = 0
+      let errorCount = 0
+      const startTime = Date.now()
+      const failedKeys: `0x${string}`[] = []
+
+      const runBatch = async (keys: `0x${string}`[], batchLabel: string): Promise<void> => {
+        for (let i = 0; i < keys.length; i++) {
+          const privateKey = keys[i]!
+          const { privateKeyToAccount: pkToAccount } = await import('viem/accounts')
+          const account = pkToAccount(privateKey)
+
+          console.log(`\n${batchLabel} ${i + 1}/${keys.length}:`)
+          console.log('-'.repeat(50))
+          console.log(`Адрес: ${account.address}`)
+
+          try {
+            console.log('Проверяем цену газа...')
+            await gasChecker.waitForGasPriceToDrop()
+
+            const result = operation === 'deposit'
+              ? await performStargateEthDeposit(privateKey)
+              : await performStargateEthWithdraw(privateKey)
+
+            if (result.skipped) {
+              skippedCount++
+              console.log(`Пропущен: ${result.reason}`)
+            } else if (result.success) {
+              successCount++
+              const failedIdx = failedKeys.indexOf(privateKey)
+              if (failedIdx !== -1) failedKeys.splice(failedIdx, 1)
+              if (operation === 'deposit' && 'depositAmount' in result) {
+                console.log(`Депозит: ${result.depositAmount} ETH`)
+              } else if (operation === 'withdraw' && 'lpAmount' in result) {
+                console.log(`Выведено LP: ${result.lpAmount} S*ETH`)
+              }
+              if (result.transactionHash) {
+                console.log(`TX: ${result.transactionHash}`)
+                console.log(`Explorer: ${result.explorerUrl}`)
+              }
+            } else {
+              errorCount++
+              console.log(`Ошибка: ${result.error}`)
+              if (!failedKeys.includes(privateKey)) failedKeys.push(privateKey)
+            }
+          } catch (error) {
+            errorCount++
+            console.log(`Критическая ошибка: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`)
+            if (!failedKeys.includes(privateKey)) failedKeys.push(privateKey)
+          }
+
+          if (i < keys.length - 1) {
+            const pauseSec = delayMinSec + Math.floor(Math.random() * (delayMaxSec - delayMinSec + 1))
+            console.log(`Пауза ${pauseSec} секунд...`)
+            await new Promise(resolve => setTimeout(resolve, pauseSec * 1000))
+          }
+        }
+      }
+
+      await runBatch(shuffledKeys, 'КОШЕЛЕК')
+
+      const totalTime = ((Date.now() - startTime) / 1000).toFixed(1)
+      console.log('\n' + '='.repeat(80))
+      console.log(`ИТОГО: Успешно: ${successCount} | Пропущено: ${skippedCount} | Ошибок: ${errorCount}`)
+      console.log(`Время выполнения: ${totalTime} сек`)
+
+      while (failedKeys.length > 0) {
+        console.log(`\n⚠️  Упали ${failedKeys.length} кошелек(ов). Повторить попытку?`)
+        const retryResponse = await prompts({
+          type: 'confirm',
+          name: 'retry',
+          message: `Запустить повтор для ${failedKeys.length} упавших кошельков?`,
+          initial: true
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } as any)
+
+        if (!retryResponse || !retryResponse['retry']) break
+
+        const retryKeys = [...failedKeys]
+        failedKeys.length = 0
+        errorCount = 0
+        console.log(`\nПОВТОР для ${retryKeys.length} кошельков...`)
+        console.log('='.repeat(80))
+        await runBatch(retryKeys, 'ПОВТОР')
+
+        console.log('\n' + '='.repeat(80))
+        console.log(`После повтора — Успешно: ${successCount} | Пропущено: ${skippedCount} | Ошибок: ${failedKeys.length}`)
+      }
+
+      console.log('\nВозврат в главное меню через 5 секунд...')
+      await new Promise(resolve => setTimeout(resolve, 5000))
+      await this.showMainMenu()
+
+    } catch (error) {
+      logger.error('Ошибка в меню Stargate ETH', error)
+      console.log('\nВозврат в главное меню через 5 секунд...')
+      await new Promise(resolve => setTimeout(resolve, 5000))
+      await this.showMainMenu()
+    }
   }
 
   /**
