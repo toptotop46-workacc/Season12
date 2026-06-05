@@ -82,7 +82,8 @@ const DAILY_LIMIT_REVERT_SELECTORS: readonly string[] = [
 const DAILY_DONE_REVERT_REASONS: readonly RegExp[] = [
   /execution reverted:?\s*checked today/i, // Arkada DailyCheck (0x9882...)
   /execution reverted:?\s*already checked/i,
-  /execution reverted:?\s*already claimed/i
+  /execution reverted:?\s*already claimed/i,
+  /already logged in/i, // Pocket Knights (0x3F50...) logDailyLogin — "UserActivity: Already logged in today"
 ]
 
 /**

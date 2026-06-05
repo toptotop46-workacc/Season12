@@ -17,6 +17,7 @@ import { performVelodrome } from './modules/velodrome.js'
 import { performWowmax } from './modules/wowmax.js'
 import { performCaptainCheckin } from './modules/captain-checkin.js'
 import { performDiceOrDieCheckin } from './modules/diceordie-checkin.js'
+import { performPocketKnightsCheckin } from './modules/pocketknights-checkin.js'
 
 // Интерфейс для результата выполнения модуля
 interface ModuleResult {
@@ -144,6 +145,11 @@ export class ParallelExecutor {
       name: 'Dice or Die Check-in',
       description: 'Ежедневный check-in в Dice or Die',
       execute: performDiceOrDieCheckin
+    },
+    {
+      name: 'Pocket Knights Check-in',
+      description: 'Ежедневный check-in в Pocket Knights',
+      execute: performPocketKnightsCheckin
     }
   ]
 
