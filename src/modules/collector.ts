@@ -4,31 +4,23 @@ import { SoneiumSwap } from './jumper.js'
 import { rpcManager, soneiumChain } from '../rpc-manager.js'
 import { safeWriteContract } from '../transaction-utils.js'
 import { logger } from '../logger.js'
+import { TOKENS as REGISTRY_TOKENS, CONTRACTS } from '../contracts.js'
 
-// Адреса токенов
+// Адреса токенов берутся из единого реестра ../contracts.ts
 const TOKENS = {
-  ETH: '0x0000000000000000000000000000000000000000',
-  USDT: '0x3A337a6adA9d885b6Ad95ec48F9b75f197b5AE35',
-  USDC_e: '0xbA9986D2381edf1DA03B0B9c1f8b00dc4AacC369',
-  USDSC: '0x3f99231dD03a9F0E7e3421c92B7b90fbe012985a'
+  ETH: REGISTRY_TOKENS.ETH,
+  USDT: REGISTRY_TOKENS.USDT,
+  USDC_e: REGISTRY_TOKENS.USDC_e,
+  USDSC: REGISTRY_TOKENS.USDSC
 } as const
 
-// Адреса контрактов протоколов (остаточные балансы Season 10)
+// Адреса контрактов протоколов (остаточные балансы Season 10) — из реестра
 const PROTOCOL_CONTRACTS = {
-  // Aave
-  AAVE_A_TOKEN: '0xb2C9E934A55B58D20496A5019F8722a96d8A44d8',
-
-  // Morpho
-  MORPHO_METAMORPHO: '0xecdbe2af33e68cf96f6716f706b078fa94e978cb',
-
-  // Stargate
-  STARGATE_POOL: '0x45f1A95A4D3f3836523F5c83673c797f4d4d263B',
-
-  // Sake Finance
-  SAKE_ATOKEN: '0x4491B60c8fdD668FcC2C4dcADf9012b3fA71a726',
-
-  // Untitled Bank
-  UNTITLED_BANK: '0xc675BB95D73CA7db2C09c3dC04dAaA7944CCBA41'
+  AAVE_A_TOKEN: CONTRACTS.aaveAToken,
+  MORPHO_METAMORPHO: CONTRACTS.morphoMetamorpho,
+  STARGATE_POOL: CONTRACTS.collectorStargatePool,
+  SAKE_ATOKEN: CONTRACTS.sakeAToken,
+  UNTITLED_BANK: CONTRACTS.untitledBank
 } as const
 
 // ABI для ERC20 токенов

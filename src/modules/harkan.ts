@@ -2,9 +2,10 @@ import { privateKeyToAccount } from 'viem/accounts'
 import { rpcManager, soneiumChain } from '../rpc-manager.js'
 import { safeWriteContract } from '../transaction-utils.js'
 import { logger } from '../logger.js'
+import { CONTRACTS } from '../contracts.js'
 
 // Адрес контракта GameHubUpgradeable
-const CONTRACT_ADDRESS = '0x983B499181A1B376CEE9Ffe18984cF62A767f745' as `0x${string}`
+const CONTRACT_ADDRESS = CONTRACTS.harkan as `0x${string}`
 
 // ABI контракта
 const CONTRACT_ABI = [

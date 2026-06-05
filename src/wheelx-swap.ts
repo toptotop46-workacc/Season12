@@ -5,17 +5,18 @@ import { rpcManager, soneiumChain } from './rpc-manager.js'
 import { safeWriteContract, safeSendTransaction } from './transaction-utils.js'
 import { logger } from './logger.js'
 import type { LiFiQuote } from './modules/jumper.js'
+import { TOKENS, CONTRACTS } from './contracts.js'
 
 // Вспомогательная функция для форматирования gwei
 function formatGwei (wei: bigint): string {
   return (Number(wei) / 1_000_000_000).toFixed(9)
 }
 
-// Контрактные адреса
-const USDC_ADDRESS = '0xbA9986D2381edf1DA03B0B9c1f8b00dc4AacC369'
-const USDT_ADDRESS = '0x3A337a6adA9d885b6Ad95ec48F9b75f197b5AE35'
-const WETH_ADDRESS = '0x4200000000000000000000000000000000000006'
-const UNISWAP_ROUTER_ADDRESS = '0x273f68c234fa55b550b40e563c4a488e0d334320'
+// Контрактные адреса берутся из единого реестра ./contracts.ts
+const USDC_ADDRESS = TOKENS.USDC_e
+const USDT_ADDRESS = TOKENS.USDT
+const WETH_ADDRESS = TOKENS.WETH
+const UNISWAP_ROUTER_ADDRESS = CONTRACTS.wheelxUniswapRouter
 
 // ABI для ERC20 токенов
 const ERC20_ABI = parseAbi([

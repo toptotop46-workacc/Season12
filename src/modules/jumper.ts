@@ -6,6 +6,7 @@ import { logger } from '../logger.js'
 import { WheelXSwap } from '../wheelx-swap.js'
 import { LIQUIDITY_SWAP_PERCENT_MIN, LIQUIDITY_SWAP_PERCENT_MAX } from '../season-config.js'
 import axios from 'axios'
+import { TOKENS } from '../contracts.js'
 
 // Интерфейсы для типизации LI.FI API (соответствуют реальной документации)
 interface TokenInfo {
@@ -74,12 +75,7 @@ const LI_FI_CONFIG = {
   INTEGRATOR: 'Soneium',
   FEE_PERCENTAGE: '0.005'
 }
-// Адреса токенов в сети Soneium
-const TOKENS = {
-  ETH: '0x0000000000000000000000000000000000000000', // Нативный ETH
-  USDT: '0x3A337a6adA9d885b6Ad95ec48F9b75f197b5AE35',
-  USDC_e: '0xbA9986D2381edf1DA03B0B9c1f8b00dc4AacC369'
-} as const
+// Адреса токенов берутся из единого реестра ../contracts.ts
 
 export function shouldSimulateQuoteTransaction (fromToken: string): boolean {
   return fromToken.toLowerCase() === TOKENS.ETH

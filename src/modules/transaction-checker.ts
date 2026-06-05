@@ -2,6 +2,7 @@ import axios from 'axios'
 import { logger } from '../logger.js'
 import { ProxyManager } from '../proxy-manager.js'
 import { CURRENT_SEASON, POINTS_LIMIT_SEASON } from '../season-config.js'
+import { parseApiResponse as parseSeasonApiResponse, statusFromPoints, sortByScoreAsc } from '../wallet-selection.js'
 
 // Типы
 
@@ -14,27 +15,6 @@ interface TransactionCheckResult {
   status: 'done' | 'not_done' | 'error'
   error?: string
   responseTime?: number
-}
-
-interface SeasonData {
-  address: string
-  baseScore: number
-  bonusPoints: number
-  season: number
-  totalScore: number
-  activityScore: number
-  liquidityScore: number
-  nftScore: number
-  sonyNftScore: number
-  isEligible: boolean
-  status: string
-  badgesCollected: unknown[]
-  liquidityContributionPoints: number
-  txScore: number
-  activityDaysScore: number
-  streakScore: number
-  createdAt: string
-  updatedAt: string
 }
 
 // Основной класс модуля
@@ -117,7 +97,9 @@ export class TransactionChecker {
     }
 
     // Сортируем по score (отстающие первыми)
-    walletScores.sort((a, b) => a.score - b.score)
+    const sortedScores = sortByScoreAsc(walletScores)
+    walletScores.length = 0
+    walletScores.push(...sortedScores)
 
     logger.info(`Проверка завершена: активных ${activeWallets.length}, завершенных ${completedWallets.length}`)
 
@@ -195,7 +177,7 @@ export class TransactionChecker {
 
       const { count, max } = this.parseApiResponse(data)
       const ratio = `${count}/${max}`
-      const status = count >= this.CONFIG.pointsLimit ? 'done' : 'not_done'
+      const status = statusFromPoints(count, this.CONFIG.pointsLimit)
 
       return {
         address,
@@ -245,45 +227,7 @@ export class TransactionChecker {
 
   // Парсинг ответа API
   private parseApiResponse (apiData: unknown): { count: number, max: number } {
-    // Проверяем, что данные - это массив
-    if (!Array.isArray(apiData) || apiData.length === 0) {
-      return { count: 0, max: POINTS_LIMIT_SEASON }
-    }
-
-    // Преобразуем данные в SeasonData
-    const seasonData: SeasonData[] = apiData.map((item: unknown) => {
-      const data = item as Record<string, unknown>
-      return {
-        address: (data['address'] as string) || '',
-        baseScore: (data['baseScore'] as number) || 0,
-        bonusPoints: (data['bonusPoints'] as number) || 0,
-        season: (data['season'] as number) || 0,
-        totalScore: (data['totalScore'] as number) || 0,
-        activityScore: (data['activityScore'] as number) || 0,
-        liquidityScore: (data['liquidityScore'] as number) || 0,
-        nftScore: (data['nftScore'] as number) || 0,
-        sonyNftScore: (data['sonyNftScore'] as number) || 0,
-        isEligible: (data['isEligible'] as boolean) || false,
-        status: (data['status'] as string) || '',
-        badgesCollected: (data['badgesCollected'] as unknown[]) || [],
-        liquidityContributionPoints: (data['liquidityContributionPoints'] as number) || 0,
-        txScore: (data['txScore'] as number) || 0,
-        activityDaysScore: (data['activityDaysScore'] as number) || 0,
-        streakScore: (data['streakScore'] as number) || 0,
-        createdAt: (data['createdAt'] as string) || '',
-        updatedAt: (data['updatedAt'] as string) || ''
-      }
-    })
-
-    // Ищем данные текущего сезона
-    const seasonDataItem = seasonData.find(item => item.season === CURRENT_SEASON)
-    const totalScore = seasonDataItem ? seasonDataItem.totalScore : 0
-    const maxPoints = POINTS_LIMIT_SEASON
-
-    return {
-      count: totalScore,
-      max: maxPoints
-    }
+    return parseSeasonApiResponse(apiData, CURRENT_SEASON, POINTS_LIMIT_SEASON)
   }
 
 }

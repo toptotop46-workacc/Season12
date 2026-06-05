@@ -560,8 +560,9 @@ export async function performSeasonBadgeMint (
       const account = privateKeyToAccount(privateKey)
       const seasonData = await getSeasonPoints(account.address, config.season)
       seasonPoints = seasonData?.totalScore
-    } catch {
+    } catch (err) {
       // ignore
+      logger.debug(`season-badge-mint: не удалось получить seasonPoints: ${err instanceof Error ? err.message : String(err)}`)
     }
 
     const result: SeasonBadgeMintResult = {

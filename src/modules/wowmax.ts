@@ -5,9 +5,10 @@ import { safeSendTransaction } from '../transaction-utils.js'
 import { logger } from '../logger.js'
 import { ProxyManager } from '../proxy-manager.js'
 import axios from 'axios'
+import { TOKENS } from '../contracts.js'
 
 // Адреса контрактов на Soneium
-const USDC_E_ADDRESS = '0xbA9986D2381edf1DA03B0B9c1f8b00dc4AacC369' as `0x${string}`
+const USDC_E_ADDRESS = TOKENS.USDC_e as `0x${string}`
 
 // Конфигурация
 const WOWMAX_API_BASE = 'https://api-gateway.wowmax.exchange'

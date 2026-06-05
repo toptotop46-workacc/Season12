@@ -5,6 +5,7 @@ import { sleep } from './backoff.js'
 import { metrics } from './metrics.js'
 import { GasChecker } from './gas-checker.js'
 import { GM_IGNORE_POINTS_LIMIT } from './season-config.js'
+import { filterUnderDailyCap, prioritizeWallets, hasReachedDailyCap as hasReachedDailyCapPure } from './wallet-selection.js'
 
 // Импорт всех модулей
 import { performArkadaCheckin } from './modules/arkada-checkin.js'
@@ -224,7 +225,7 @@ export class ParallelExecutor {
    * Проверяет, достиг ли кошелёк дневного лимита транзакций
    */
   private hasReachedDailyCap (address: string): boolean {
-    return this.getTodayTxCount(address) >= this.MAX_TX_PER_WALLET_PER_DAY
+    return hasReachedDailyCapPure(this.getTodayTxCount(address), this.MAX_TX_PER_WALLET_PER_DAY)
   }
 
   /**
@@ -353,23 +354,24 @@ export class ParallelExecutor {
       }
 
       // Фильтруем кошельки, достигшие дневного лимита транзакций
-      const underCap = candidateWallets.filter(w => !this.hasReachedDailyCap(w.address))
-      const pool = underCap.length > 0 ? underCap : candidateWallets // fallback если все на лимите
+      // (если лимита достигли все — helper вернёт исходный список как fallback)
+      const pool = filterUnderDailyCap(
+        candidateWallets,
+        (address) => this.getTodayTxCount(address),
+        this.MAX_TX_PER_WALLET_PER_DAY
+      )
 
       // Сортировка по приоритету:
       // 1) Без транзакции сегодня (streak) — первыми
       // 2) По score — отстающие (меньший score) первыми
-      pool.sort((a, b) => {
-        const aToday = this.hasTransactedToday(a.address) ? 1 : 0
-        const bToday = this.hasTransactedToday(b.address) ? 1 : 0
-        if (aToday !== bToday) return aToday - bToday // без транзакции сегодня → выше
-        const aScore = scoreMap.get(a.address) ?? 0
-        const bScore = scoreMap.get(b.address) ?? 0
-        return aScore - bScore // меньший score → выше приоритет
-      })
+      const prioritized = prioritizeWallets(
+        pool,
+        (address) => this.hasTransactedToday(address),
+        (address) => scoreMap.get(address) ?? 0
+      )
 
-      const actualThreadCount = Math.min(threadCount, pool.length)
-      this.currentIterationWallets = pool.slice(0, actualThreadCount)
+      const actualThreadCount = Math.min(threadCount, prioritized.length)
+      this.currentIterationWallets = prioritized.slice(0, actualThreadCount)
 
     } catch (error) {
       logger.error('Ошибка при выборе кошельков для итерации', error)

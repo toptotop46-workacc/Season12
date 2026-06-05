@@ -3,9 +3,9 @@ import { privateKeyToAccount } from 'viem/accounts'
 import { rpcManager, soneiumChain } from '../rpc-manager.js'
 import { safeWriteContract, isDailyDoneRevert } from '../transaction-utils.js'
 import { logger } from '../logger.js'
+import { CONTRACTS } from '../contracts.js'
 
-// Адрес контракта чекина (из транзакции Blockscout)
-const CONTRACT_ADDRESS = '0xedCbF9D4CC3BA9aAA896adADeac1b6DF6326f7D8' as const
+const CONTRACT_ADDRESS = CONTRACTS.captainCheckin
 
 const CONTRACT_ABI = [
   {

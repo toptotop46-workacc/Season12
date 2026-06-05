@@ -2,6 +2,7 @@ import { HttpsProxyAgent } from 'https-proxy-agent'
 import { SocksProxyAgent } from 'socks-proxy-agent'
 import { readFileSync } from 'fs'
 import axios from 'axios'
+import { logger } from './logger.js'
 
 // Интерфейс для конфигурации прокси
 export interface ProxyConfig {
@@ -70,8 +71,9 @@ export class ProxyManager {
         })
         .filter((proxy): proxy is ProxyConfig => proxy !== null)
 
-    } catch {
+    } catch (err) {
       this.proxies = []
+      logger.debug(`proxy-manager: не удалось загрузить прокси, список пуст: ${err instanceof Error ? err.message : String(err)}`)
     }
   }
 
@@ -317,8 +319,9 @@ export class ProxyManager {
             })
             return true
           }
-        } catch {
+        } catch (err) {
           // Продолжаем тестирование с другими URL
+          logger.debug(`proxy-manager: тест прокси через URL не прошёл, пробуем следующий: ${err instanceof Error ? err.message : String(err)}`)
           continue
         }
       }
@@ -329,8 +332,9 @@ export class ProxyManager {
         lastChecked: now
       })
       return false
-    } catch {
+    } catch (err) {
       // Кэшируем неудачный результат
+      logger.debug(`proxy-manager: проверка здоровья прокси упала, кэшируем как нерабочий: ${err instanceof Error ? err.message : String(err)}`)
       this.proxyHealthCache.set(proxyKey, {
         isHealthy: false,
         lastChecked: now
@@ -362,8 +366,9 @@ export class ProxyManager {
         if (isHealthy) {
           return proxy
         }
-      } catch {
+      } catch (err) {
         // Продолжаем поиск
+        logger.debug(`proxy-manager: ошибка при подборе прокси, продолжаем поиск: ${err instanceof Error ? err.message : String(err)}`)
       }
 
       // Небольшая задержка между попытками
@@ -438,8 +443,9 @@ export class ProxyManager {
           } else {
             broken.push(proxy)
           }
-        } catch {
+        } catch (err) {
           broken.push(proxy)
+          logger.debug(`proxy-manager: прокси помечен как нерабочий из-за ошибки: ${err instanceof Error ? err.message : String(err)}`)
         }
       })
 

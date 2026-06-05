@@ -3,26 +3,9 @@ import { privateKeyToAccount } from 'viem/accounts'
 import { rpcManager, soneiumChain } from '../rpc-manager.js'
 import { safeWriteContract } from '../transaction-utils.js'
 import { logger } from '../logger.js'
+import { TOKENS, SPENDERS } from '../contracts.js'
 
-// Адреса токенов в сети Soneium
-const TOKENS = {
-  USDT: '0x3A337a6adA9d885b6Ad95ec48F9b75f197b5AE35',
-  USDC_e: '0xbA9986D2381edf1DA03B0B9c1f8b00dc4AacC369'
-} as const
-
-// Адреса известных спендеров (контрактов, которым могут быть выданы апрувы)
-const SPENDERS = {
-  AAVE_L2_POOL: '0xdd3d7a7d03d9fd9ef45f3e587287922ef65ca38b', // Aave L2Pool
-  MORPHO_METAMORPHO: '0xecdbe2af33e68cf96f6716f706b078fa94e978cb',
-  STARGATE_POOL: '0x45f1A95A4D3f3836523F5c83673c797f4d4d263B',
-  UNTITLED_BANK: '0xc675BB95D73CA7db2C09c3dC04dAaA7944CCBA41',
-  SONUS: '0x882Af8BD0A035d4BCEb42DEe8A5A7bC8Ef2F6FF9',
-  WHEELX: '0x7eC9672678509a574F6305F112a7E3703845a98b',
-  RELAY: '0xBBbfD134E9b44BfB5123898BA36b01dE7ab93d98',
-  LI_FI: '0x864b314D4C5a0399368609581d3E8933a63b9232',
-  SAKE: '0x3C3987A310ee13F7B8cBBe21D97D4436ba5E4B5f',
-  UNISWAP_V3: '0x273F68c234fA55b550b40E563c4a488e0D334320'
-} as const
+// Адреса токенов и спендеров берутся из единого реестра ../contracts.ts
 
 // Маппинг имен спендеров для удобного отображения
 const SPENDER_NAMES: Record<string, string> = {
@@ -136,8 +119,9 @@ async function findAllApprovals (
         if (symbol) {
           tokenSymbol = symbol
         }
-      } catch {
+      } catch (err) {
         // Используем значения по умолчанию
+        logger.debug(`revoke: не удалось получить данные токена, используем значения по умолчанию: ${err instanceof Error ? err.message : String(err)}`)
       }
 
       // Проверяем allowance для каждого спендера
@@ -164,12 +148,14 @@ async function findAllApprovals (
               allowanceFormatted
             })
           }
-        } catch {
+        } catch (err) {
           // Пропускаем ошибки при проверке конкретного спендера
+          logger.debug(`revoke: ошибка при проверке спендера, пропускаем: ${err instanceof Error ? err.message : String(err)}`)
         }
       }
-    } catch {
+    } catch (err) {
       // Пропускаем ошибки при работе с токеном
+      logger.debug(`revoke: ошибка при работе с токеном, пропускаем: ${err instanceof Error ? err.message : String(err)}`)
     }
   }
 

@@ -3,9 +3,10 @@ import { privateKeyToAccount } from 'viem/accounts'
 import { rpcManager, soneiumChain } from '../rpc-manager.js'
 import { safeWriteContract, isDailyDoneRevert } from '../transaction-utils.js'
 import { logger } from '../logger.js'
+import { CONTRACTS, ZERO_ADDRESS } from '../contracts.js'
 
 // Адрес контракта Main
-const CONTRACT_ADDRESS = '0x21Be1D69A77eA5882aCcD5c5319Feb7AC3854751'
+const CONTRACT_ADDRESS = CONTRACTS.lootcoin
 
 // ABI контракта (только нужные функции)
 const CONTRACT_ABI = [
@@ -105,7 +106,7 @@ export async function performCheckin (privateKey: `0x${string}`): Promise<{
         address: CONTRACT_ADDRESS,
         abi: CONTRACT_ABI,
         functionName: 'checkIn',
-        args: ['0x0000000000000000000000000000000000000000'] // Нулевой адрес как реферер
+        args: [ZERO_ADDRESS] // Нулевой адрес как реферер
       }
     )
 

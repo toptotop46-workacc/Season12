@@ -4,11 +4,12 @@ import { rpcManager, soneiumChain } from '../rpc-manager.js'
 import { safeSendTransaction } from '../transaction-utils.js'
 import { logger } from '../logger.js'
 import type { PublicClient } from 'viem'
+import { TOKENS, CONTRACTS } from '../contracts.js'
 
-// Адреса контрактов на Soneium
-const UNIVERSAL_ROUTER_ADDRESS = '0x01D40099fCD87C018969B0e8D4aB1633Fb34763C' as `0x${string}`
-const WETH_ADDRESS = '0x4200000000000000000000000000000000000006' as `0x${string}`
-const USDC_E_ADDRESS = '0xbA9986D2381edf1DA03B0B9c1f8b00dc4AacC369' as `0x${string}`
+// Адреса контрактов берутся из единого реестра ../contracts.ts
+const UNIVERSAL_ROUTER_ADDRESS = CONTRACTS.velodromeUniversalRouter as `0x${string}`
+const WETH_ADDRESS = TOKENS.WETH as `0x${string}`
+const USDC_E_ADDRESS = TOKENS.USDC_e as `0x${string}`
 
 // Конфигурация
 const FEE_TIER = 100 // 0.01%
@@ -107,7 +108,7 @@ async function getETHPriceFromAPI (): Promise<number | null> {
 }
 
 async function getQuoteV4 (publicClient: PublicClient, tokenIn: `0x${string}`, tokenOut: `0x${string}`, fee: number, tickSpacing: number, amountIn: bigint): Promise<bigint | null> {
-  const V4_QUOTER_ADDRESS = '0x3972c00f7ed4885e145823eb7c655375d275a1c5' as `0x${string}`
+  const V4_QUOTER_ADDRESS = CONTRACTS.velodromeV4Quoter as `0x${string}`
   const HOOKS_ADDRESS = '0x0000000000000000000000000000000000000000' as `0x${string}`
 
   try {
@@ -155,8 +156,8 @@ async function getQuote (publicClient: PublicClient, tokenIn: `0x${string}`, tok
   }
 
   const quoterAddresses = [
-    '0xb27308f9F90D607463bb33eA1BeBb41C27CE5AB6',
-    '0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a'
+    CONTRACTS.velodromeQuoterFallback1,
+    CONTRACTS.velodromeQuoterFallback2
   ]
 
   for (const quoterAddress of quoterAddresses) {

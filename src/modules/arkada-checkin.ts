@@ -3,9 +3,10 @@ import { privateKeyToAccount } from 'viem/accounts'
 import { rpcManager, soneiumChain } from '../rpc-manager.js'
 import { safeWriteContract, isDailyDoneRevert } from '../transaction-utils.js'
 import { logger } from '../logger.js'
+import { CONTRACTS } from '../contracts.js'
 
 // Адрес контракта DailyCheck
-const CONTRACT_ADDRESS = '0x98826e728977B25279ad7629134FD0e96bd5A7b2'
+const CONTRACT_ADDRESS = CONTRACTS.arkadaCheckin
 
 // ABI контракта (только нужные функции)
 const CONTRACT_ABI = [

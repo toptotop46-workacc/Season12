@@ -476,8 +476,9 @@ export async function broadcastRawTransactionWithFallback (
           )
           return expectedHash
         }
-      } catch {
+      } catch (err) {
         // recovery-check сам упал — двигаемся дальше
+        logger.debug(`recovery-check упал, двигаемся дальше: ${err instanceof Error ? err.message : String(err)}`)
       }
     }
 
@@ -779,8 +780,9 @@ export async function safeSendTransaction (
     for (const h of broadcastedHashes) {
       try {
         if (await transactionExistsOnNetwork(publicClient, h, context)) return h
-      } catch {
+      } catch (err) {
         // recovery-check сам упал — двигаемся дальше, не блокируем основной flow
+        logger.debug(`recovery-check упал (не блокируем flow): ${err instanceof Error ? err.message : String(err)}`)
       }
     }
     return undefined

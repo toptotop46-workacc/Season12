@@ -1,5 +1,6 @@
 import { appendFileSync, existsSync, mkdirSync } from 'fs'
 import { join } from 'path'
+import { logger } from './logger.js'
 
 export interface MetricEntry {
   timestamp: string
@@ -45,8 +46,9 @@ class MetricsCollector {
     }
     try {
       appendFileSync(this.filePath, JSON.stringify(line) + '\n', 'utf8')
-    } catch {
+    } catch (err) {
       // Silently ignore write errors to avoid crashing the app
+      logger.debug(`metrics: не удалось записать строку метрики: ${err instanceof Error ? err.message : String(err)}`)
     }
   }
 

@@ -3,11 +3,12 @@ import { privateKeyToAccount } from 'viem/accounts'
 import { rpcManager, soneiumChain } from '../rpc-manager.js'
 import { safeWriteContractWithoutSimulation, safeWriteContract } from '../transaction-utils.js'
 import { logger } from '../logger.js'
+import { CONTRACTS } from '../contracts.js'
 
 // Контракт StargatePoolNative (ETH пул)
-const STARGATE_POOL_NATIVE = '0x2F6F07CDcf3588944Bf4C42aC74ff24bF56e7590' as const
+const STARGATE_POOL_NATIVE = CONTRACTS.stargatePoolNative
 // LP токен S*ETH
-const STARGATE_ETH_LP = '0x26CA12d5eC43AA9f0aDb4a891918B70CF5720281' as const
+const STARGATE_ETH_LP = CONTRACTS.stargateEthLp
 
 // Минимальный резерв ETH для газа (0.0002 ETH)
 const GAS_RESERVE = 200000000000000n
