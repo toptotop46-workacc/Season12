@@ -10,6 +10,7 @@ mexc_api.txt
 proxy.txt
 .env
 .env.*
+!.env.example
 
 # Logs
 logs/

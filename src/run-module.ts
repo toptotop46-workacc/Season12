@@ -1,6 +1,7 @@
 import { setupEncoding } from './encoding-setup.js'
 import { KeyEncryption } from './key-encryption.js'
 import { logger } from './logger.js'
+import { shutdownManager } from './shutdown.js'
 
 // Импорт всех модулей
 import { performArkadaCheckin } from './modules/arkada-checkin.js'
@@ -188,19 +189,12 @@ async function main (): Promise<void> {
 
   } catch (error) {
     logger.error('Критическая ошибка приложения', error)
-    process.exit(1)
+    await shutdownManager.shutdown(1, 'Критическая ошибка')
   }
 }
 
-process.on('SIGINT', () => {
-  process.exit(0)
-})
-
-process.on('SIGTERM', () => {
-  process.exit(0)
-})
-
-main().catch((error) => {
+// SIGINT/SIGTERM handled by shutdownManager
+main().catch(async (error) => {
   logger.error('Необработанная ошибка', error)
-  process.exit(1)
+  await shutdownManager.shutdown(1, 'Необработанная ошибка')
 })

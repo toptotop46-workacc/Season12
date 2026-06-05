@@ -1,6 +1,8 @@
 import { privateKeyToAccount } from 'viem/accounts'
 import { TransactionChecker } from './modules/transaction-checker.js'
 import { logger } from './logger.js'
+import { sleep } from './backoff.js'
+import { metrics } from './metrics.js'
 import { GasChecker } from './gas-checker.js'
 import { GM_IGNORE_POINTS_LIMIT } from './season-config.js'
 
@@ -394,13 +396,13 @@ export class ParallelExecutor {
 
           await this.executeIteration(threadCount)
 
-          await new Promise(resolve => setTimeout(resolve, 5000))
+          await sleep(5000)
 
           this.iteration++
 
         } catch (error) {
           logger.error(`Ошибка в итерации #${this.iteration}`, error)
-          await new Promise(resolve => setTimeout(resolve, 1000))
+          await sleep(1000)
           this.iteration++
         }
       }
@@ -496,7 +498,7 @@ export class ParallelExecutor {
 
       // Специальная обработка для Jumper модуля (rate limit protection)
       if (module.name === 'Jumper') {
-        await new Promise(resolve => setTimeout(resolve, 2000)) // 2 секунды задержки
+        await sleep(2000) // 2 секунды задержки
       }
 
       // Выполняем модуль
@@ -513,6 +515,11 @@ export class ParallelExecutor {
       const isSkipped = result.skipped === true
       const isSuccess = result.success || isSkipped
 
+      metrics.moduleRun(module.name, account.address, isSuccess, endTime - startTime, {
+        txHash: result.transactionHash,
+        error: isSkipped ? undefined : result.error
+      })
+
       return {
         threadId,
         success: isSuccess,
@@ -527,6 +534,10 @@ export class ParallelExecutor {
     } catch (error) {
       const endTime = Date.now()
       const executionTime = (endTime - startTime) / 1000
+
+      metrics.moduleRun('unknown', 'unknown', false, endTime - startTime, {
+        error: error instanceof Error ? error.message : 'Неизвестная ошибка'
+      })
 
       return {
         threadId,
@@ -636,7 +647,7 @@ export class ParallelExecutor {
       })
 
       if (i + maxConcurrent < tasks.length) {
-        await new Promise(resolve => setTimeout(resolve, 2000))
+        await sleep(2000)
       }
     }
 
@@ -656,7 +667,7 @@ export class ParallelExecutor {
     try {
       // Специальная обработка для Jumper модуля (rate limit protection)
       if (task.assignedModule.name === 'Jumper') {
-        await new Promise(resolve => setTimeout(resolve, 2000)) // 2 секунды задержки
+        await sleep(2000) // 2 секунды задержки
       }
 
       // Выполняем модуль
@@ -815,6 +826,7 @@ export class ParallelExecutor {
     const modulesUsed = threadResults.map(r => r.moduleName)
     logger.iterationStart(modulesUsed)
     logger.iterationResult(successCount, errorCount, totalTime)
+    metrics.iteration(errorCount === 0, totalTime * 1000, { successCount, errorCount })
 
     threadResults.forEach(result => {
       logger.threadResult(
