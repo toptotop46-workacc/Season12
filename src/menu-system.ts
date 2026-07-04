@@ -12,7 +12,7 @@ import axios from 'axios'
 import ExcelJS from 'exceljs'
 import { existsSync, mkdirSync } from 'fs'
 import { join } from 'path'
-import { CURRENT_SEASON, POINTS_LIMIT_SEASON, BADGE_MINT_CONFIG } from './season-config.js'
+import { CURRENT_SEASON, POINTS_LIMIT_SEASON, BADGE_MINT_CONFIG, BONUS_COLUMN_OVERRIDES } from './season-config.js'
 import { shutdownManager } from './shutdown.js'
 import { config } from './config.js'
 import { backoffDelay, sleep } from './backoff.js'
@@ -33,19 +33,34 @@ function getDefaultBonusQuests (): Record<string, string> {
 /**
  * Авто-обнаружение бонусных колонок из первого ответа bonus-dapp API.
  * Вызывается один раз при получении первых данных.
+ *
+ * По умолчанию одна колонка на dapp (а не на квест) — чтобы таблица умещалась
+ * в экран; у dapp с несколькими квестами в ячейке агрегат «выполнено квестов/всего».
+ * Через BONUS_COLUMN_OVERRIDES (season-config) dapp можно развернуть в колонку
+ * на каждый квест или сократить заголовок.
  */
 function discoverBonusColumns (bonusData: BonusDappQuest[]): void {
   if (BONUS_QUEST_COLUMNS.length > 0) return // уже обнаружены
   const seasonQuests = bonusData.filter(q => q.season === CURRENT_SEASON)
   if (seasonQuests.length === 0) return
 
-  BONUS_QUEST_COLUMNS = seasonQuests.map(dapp => ({
-    dappId: dapp.id,
-    columns: dapp.quests.map((_quest, i) => ({
-      key: `${dapp.id}_q${i}`,
-      header: dapp.quests.length === 1 ? dapp.name : `${dapp.name} #${i + 1}`
-    }))
-  }))
+  BONUS_QUEST_COLUMNS = seasonQuests.map(dapp => {
+    const override = BONUS_COLUMN_OVERRIDES[dapp.id]
+    if (override?.questHeaders && override.questHeaders.length > 0) {
+      // Развёрнутый режим: колонка на каждый квест dapp
+      return {
+        dappId: dapp.id,
+        columns: dapp.quests.map((_quest, i) => ({
+          key: `${dapp.id}_q${i}`,
+          header: override.questHeaders?.[i] ?? `${dapp.name} #${i + 1}`
+        }))
+      }
+    }
+    return {
+      dappId: dapp.id,
+      columns: [{ key: dapp.id, header: override?.header ?? dapp.name }]
+    }
+  })
   BONUS_QUEST_COLUMNS_FLAT = BONUS_QUEST_COLUMNS.flatMap(d => d.columns)
 }
 
@@ -1037,17 +1052,29 @@ export class MenuSystem {
     return { success: false, error: `Все ${this.STATS_CONFIG.retryAttempts} попыток неудачны. Последняя ошибка: ${lastError}` }
   }
 
-  // Парсинг заданий текущего сезона из bonus-dapp данных (по одному столбцу на квест)
+  // Парсинг заданий текущего сезона из bonus-dapp данных.
+  // Развёрнутый dapp (несколько колонок) — прогресс "completed/required" по каждому квесту.
+  // Агрегированный (одна колонка): один квест — его прогресс, несколько — "выполнено квестов/всего".
+  // Формат "X/Y" сохраняется во всех случаях, чтобы работала цветовая индикация.
   private parseBonusQuests (bonusData: BonusDappQuest[]): Record<string, string> {
     const seasonQuests = bonusData.filter((item) => item.season === CURRENT_SEASON)
     const out: Record<string, string> = { ...getDefaultBonusQuests() }
 
     for (const { dappId, columns } of BONUS_QUEST_COLUMNS) {
       const dapp = seasonQuests.find((item) => item.id === dappId)
-      if (!dapp) continue
-      for (let i = 0; i < columns.length; i++) {
-        const quest = dapp.quests[i]
-        out[columns[i]!.key] = quest ? `${quest.completed}/${quest.required}` : 'N/A'
+      if (!dapp || columns.length === 0 || dapp.quests.length === 0) continue
+
+      if (columns.length > 1) {
+        for (let i = 0; i < columns.length; i++) {
+          const quest = dapp.quests[i]
+          out[columns[i]!.key] = quest ? `${quest.completed}/${quest.required}` : 'N/A'
+        }
+      } else if (dapp.quests.length === 1) {
+        const quest = dapp.quests[0]!
+        out[columns[0]!.key] = `${quest.completed}/${quest.required}`
+      } else {
+        const done = dapp.quests.filter(q => q.isDone).length
+        out[columns[0]!.key] = `${done}/${dapp.quests.length}`
       }
     }
     return out
@@ -1243,7 +1270,7 @@ export class MenuSystem {
 
       // Ширины колонок: динамически по длине заголовка бонус-квестов
       const W_NUM = 6
-      const W_ADDR = 55
+      const W_ADDR = 44 // адрес 42 символа + отступ
       const W_SEASON = 9
       const bonusWidths = BONUS_QUEST_COLUMNS_FLAT.map(c => Math.max(c.header.length + 1, 8))
       const colWidths = [W_NUM, W_ADDR, W_SEASON, ...bonusWidths]
@@ -1252,11 +1279,19 @@ export class MenuSystem {
       const topLine = '┌' + sepParts.join('┬') + '┐'
       const midLine = '├' + sepParts.join('┼') + '┤'
       const botLine = '└' + sepParts.join('┴') + '┘'
+
+      // Заголовки колонок заданий — по центру
+      const padCenter = (s: string, w: number): string => {
+        if (s.length >= w) return s
+        const left = Math.floor((w - s.length) / 2)
+        return ' '.repeat(left) + s + ' '.repeat(w - s.length - left)
+      }
+
       const headerCells = [
         '#'.padStart(W_NUM),
         'Wallet Address'.padEnd(W_ADDR),
         `Season ${CURRENT_SEASON}`.padEnd(W_SEASON),
-        ...BONUS_QUEST_COLUMNS_FLAT.map((c, i) => c.header.padEnd(colWidths[3 + i]!))
+        ...BONUS_QUEST_COLUMNS_FLAT.map((c, i) => padCenter(c.header, colWidths[3 + i]!))
       ]
       logger.print(topLine)
       logger.print('│' + headerCells.map((c, i) => padToVisible(c, colWidths[i]!)).join('│') + '│')

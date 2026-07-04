@@ -40,6 +40,10 @@ export const CONTRACTS = {
   // WheelX (Uniswap-style роутер)
   wheelxUniswapRouter: '0x273f68c234fa55b550b40e563c4a488e0d334320',
 
+  // Kyo — DEX-агрегатор (Router.swap). Через него идёт свап Startale-квеста S12.
+  // Адрес приходит в ответе Kyo API (toAddress); держим тут как guard-проверку.
+  kyoAggregatorRouter: '0x206D7FBBD740780D7eFf488D40744276e8dAf077',
+
   // Модули чек-инов / спинов
   lootcoin: '0x21Be1D69A77eA5882aCcD5c5319Feb7AC3854751',
   harkan: '0x983B499181A1B376CEE9Ffe18984cF62A767f745',
@@ -47,7 +51,11 @@ export const CONTRACTS = {
   arkadaCheckin: '0x98826e728977B25279ad7629134FD0e96bd5A7b2',
   diceOrDieCheckin: '0x17c7E99c2c1aEFdf3811F72ce960a0d560F039B4',
   pocketKnightsCheckin: '0x3F50Ba759b0e8BF4Fc78E79b36dfcC015Cb11DAa',
-  awakeningGuardiansPayment: '0xd2069fde8bc04c95ba91fd87adf116ef1f02c2ce',
+  // Startale GM (DailyCheckIn) — бесплатный checkIn(), бонус-квест S12 startale_12 quests[0].
+  startaleGm: '0x0B9f730bF4C1Bf1c0D5B548556a239d5eC0A1D3e',
+  // OnChainGM (onchaingm.com) — платный GM, бонус-квест S12 onchaingm_12.
+  // ERC1967Proxy, метод onChainGM(address referrer) payable с комиссией ~$0.10 в ETH.
+  onchainGm: '0x8ADA1808cc5ed8493836e6A79080ea0ea2f008eC',
 
   // Stargate (bridge ETH)
   stargatePoolNative: '0x2F6F07CDcf3588944Bf4C42aC74ff24bF56e7590',

@@ -18,7 +18,10 @@ import { performWowmax } from './modules/wowmax.js'
 import { performCaptainCheckin } from './modules/captain-checkin.js'
 import { performDiceOrDieCheckin } from './modules/diceordie-checkin.js'
 import { performPocketKnightsCheckin } from './modules/pocketknights-checkin.js'
-import { performAwakeningGuardians } from './modules/awakening-guardians.js'
+import { performStartaleGm } from './modules/startale-gm.js'
+import { performStartaleSwap } from './modules/startale-swap.js'
+import { performStartaleInvite } from './modules/startale-invite.js'
+import { performOnChainGm } from './modules/onchaingm.js'
 
 // Интерфейс для результата выполнения модуля
 interface ModuleResult {
@@ -152,11 +155,29 @@ export class ParallelExecutor {
       description: 'Ежедневный check-in в Pocket Knights',
       execute: performPocketKnightsCheckin
     },
+    // Бонусные квесты S12 (реализованы; выбираются в меню, самогейтятся по выполнению)
     {
-      name: 'Awakening of Guardians',
-      description: 'Покупка X2 Gold Reward (бонусный квест, лимит 5/5)',
-      execute: performAwakeningGuardians
+      name: 'Startale GM',
+      description: 'Бонус S12: Daily GM x5 для Startale (бесплатный checkIn)',
+      execute: performStartaleGm
+    },
+    {
+      name: 'OnChainGM',
+      description: 'Бонус S12: GM x5 (onchaingm.com, комиссия ~$0.10 за GM)',
+      execute: performOnChainGm
+    },
+    {
+      name: 'Startale Swap',
+      description: 'Бонус S12: свап ~$5-6 ETH → USDSC через Kyo',
+      execute: performStartaleSwap
+    },
+    {
+      name: 'Startale Invite',
+      description: 'Бонус S12: реферал invite (требует ≥2 прокси в proxy.txt)',
+      execute: performStartaleInvite
     }
+    // Заглушки (fantasyteam-mint, sweep-mint, hecanos-mint) в ротацию НЕ добавлены —
+    // платные/не реализованы (sweep ~$1.1, hecanos $1 backend-gated).
   ]
 
   constructor (transactionChecker: TransactionChecker | null) {

@@ -14,7 +14,13 @@ import { performWowmax } from './modules/wowmax.js'
 import { performCaptainCheckin } from './modules/captain-checkin.js'
 import { performDiceOrDieCheckin } from './modules/diceordie-checkin.js'
 import { performPocketKnightsCheckin } from './modules/pocketknights-checkin.js'
-import { performAwakeningGuardians } from './modules/awakening-guardians.js'
+import { performStartaleGm } from './modules/startale-gm.js'
+import { performStartaleSwap } from './modules/startale-swap.js'
+import { performStartaleInvite } from './modules/startale-invite.js'
+import { performFantasyTeamMint } from './modules/fantasyteam-mint.js'
+import { performSweepMint } from './modules/sweep-mint.js'
+import { performOnChainGm } from './modules/onchaingm.js'
+import { performHecanosMint } from './modules/hecanos-mint.js'
 
 // Интерфейс для результата выполнения модуля
 interface ModuleResult {
@@ -94,10 +100,41 @@ const modules: Record<string, Module> = {
     description: 'Ежедневный check-in в Pocket Knights',
     execute: performPocketKnightsCheckin
   },
-  'awakening-guardians': {
-    name: 'Awakening of Guardians',
-    description: 'Покупка X2 Gold Reward (бонусный квест, лимит 5/5)',
-    execute: performAwakeningGuardians
+  // Бонусные квесты S12 (заглушки — onchain-действия реализуем по одному)
+  'startale-gm': {
+    name: 'Startale GM',
+    description: 'Бонусный квест S12: Daily GM x5 для Startale (бесплатный checkIn)',
+    execute: performStartaleGm
+  },
+  'startale-swap': {
+    name: 'Startale Swap',
+    description: 'Бонусный квест S12: свап ~$5-6 ETH → USDSC через Kyo',
+    execute: performStartaleSwap
+  },
+  'startale-invite': {
+    name: 'Startale Invite',
+    description: 'Бонусный квест S12: реферал (invite 1 friend) — требует прокси',
+    execute: performStartaleInvite
+  },
+  'fantasyteam-mint': {
+    name: 'Fantasy Team',
+    description: 'Бонусный квест S12: минт Team ID (заглушка)',
+    execute: performFantasyTeamMint
+  },
+  'sweep-mint': {
+    name: 'Sweep',
+    description: 'Бонусный квест S12: минт 4 NFT Chain of Legends (заглушка)',
+    execute: performSweepMint
+  },
+  'onchaingm': {
+    name: 'OnChainGM',
+    description: 'Бонусный квест S12: GM x5 (заглушка)',
+    execute: performOnChainGm
+  },
+  'hecanos-mint': {
+    name: 'Heroes of Hecanos',
+    description: 'Бонусный квест S12: минт Card Back NFT (заглушка)',
+    execute: performHecanosMint
   }
 }
 

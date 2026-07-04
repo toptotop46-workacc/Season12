@@ -1,6 +1,6 @@
 {
   "name": "soneium-automation",
-  "version": "11.0.0",
+  "version": "12.0.0",
   "description": "Автоматизация операций в сети Soneium с случайным выбором модулей и ключей",
   "type": "module",
   "main": "dist/index.js",
@@ -20,7 +20,14 @@
     "harkan": "tsx src/run-module.ts harkan",
     "velodrome": "tsx src/run-module.ts velodrome",
     "wowmax": "tsx src/run-module.ts wowmax",
-    "captain-checkin": "tsx src/run-module.ts captain-checkin"
+    "captain-checkin": "tsx src/run-module.ts captain-checkin",
+    "startale-gm": "tsx src/run-module.ts startale-gm",
+    "startale-swap": "tsx src/run-module.ts startale-swap",
+    "startale-invite": "tsx src/run-module.ts startale-invite",
+    "fantasyteam-mint": "tsx src/run-module.ts fantasyteam-mint",
+    "sweep-mint": "tsx src/run-module.ts sweep-mint",
+    "onchaingm": "tsx src/run-module.ts onchaingm",
+    "hecanos-mint": "tsx src/run-module.ts hecanos-mint"
   },
   "keywords": [
     "soneium",
@@ -72,5 +79,8 @@
     "form-data": "^4.0.6",
     "js-yaml": "^4.2.0",
     "ws": "^8.21.0"
+  },
+  "allowScripts": {
+    "esbuild@0.28.1": true
   }
 }
