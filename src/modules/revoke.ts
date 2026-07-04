@@ -1,78 +1,79 @@
-import { formatUnits } from 'viem'
+/**
+ * Отзыв всех апрувов кошелька в Soneium.
+ *
+ * Список апрувов берётся из Rabby API (см. ../rabby-api.ts) — как в UI Rabby:
+ *  - ERC-20  → token_authorized_list → approve(spender, 0)
+ *  - NFT     → nft_authorized_list  → setApprovalForAll(spender, false)
+ *
+ * Перед каждой транзакцией состояние перепроверяется он-чейн: данные Rabby
+ * могут отставать, а при недоступности/подмене ответа API чужой апрув даст
+ * allowance 0 / isApprovedForAll false и будет пропущен без транзакции.
+ */
+
+import { isAddress } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { rpcManager, soneiumChain } from '../rpc-manager.js'
 import { safeWriteContract } from '../transaction-utils.js'
 import { logger } from '../logger.js'
-import { TOKENS, SPENDERS } from '../contracts.js'
+import { getTokenAuthorizedList, getNftAuthorizedList } from '../rabby-api.js'
 
-// Адреса токенов и спендеров берутся из единого реестра ../contracts.ts
+// Задержка между транзакциями отзыва
+const DELAY_BETWEEN_TX_MS = 5000
 
-// Маппинг имен спендеров для удобного отображения
-const SPENDER_NAMES: Record<string, string> = {
-  [SPENDERS.AAVE_L2_POOL]: 'Aave L2Pool',
-  [SPENDERS.MORPHO_METAMORPHO]: 'Morpho MetaMorpho',
-  [SPENDERS.STARGATE_POOL]: 'Stargate Pool',
-  [SPENDERS.UNTITLED_BANK]: 'Untitled Bank',
-  [SPENDERS.SONUS]: 'Sonus',
-  [SPENDERS.WHEELX]: 'WheelX',
-  [SPENDERS.RELAY]: 'Relay',
-  [SPENDERS.LI_FI]: 'LI.FI',
-  [SPENDERS.SAKE]: 'Sake',
-  [SPENDERS.UNISWAP_V3]: 'Uniswap V3'
-}
-
-// Маппинг имен токенов
-const TOKEN_NAMES: Record<string, string> = {
-  [TOKENS.USDT]: 'USDT',
-  [TOKENS.USDC_e]: 'USDC.e'
-}
-
-// ERC20 ABI для работы с токенами
+// ERC20 ABI: чтение allowance + отзыв через approve(spender, 0)
 const ERC20_ABI = [
   {
-    'inputs': [
-      { 'internalType': 'address', 'name': 'owner', 'type': 'address' },
-      { 'internalType': 'address', 'name': 'spender', 'type': 'address' }
+    inputs: [
+      { internalType: 'address', name: 'owner', type: 'address' },
+      { internalType: 'address', name: 'spender', type: 'address' }
     ],
-    'name': 'allowance',
-    'outputs': [{ 'internalType': 'uint256', 'name': '', 'type': 'uint256' }],
-    'stateMutability': 'view',
-    'type': 'function'
+    name: 'allowance',
+    outputs: [{ internalType: 'uint256', name: '', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function'
   },
   {
-    'inputs': [
-      { 'internalType': 'address', 'name': 'spender', 'type': 'address' },
-      { 'internalType': 'uint256', 'name': 'amount', 'type': 'uint256' }
+    inputs: [
+      { internalType: 'address', name: 'spender', type: 'address' },
+      { internalType: 'uint256', name: 'amount', type: 'uint256' }
     ],
-    'name': 'approve',
-    'outputs': [{ 'internalType': 'bool', 'name': '', 'type': 'bool' }],
-    'stateMutability': 'nonpayable',
-    'type': 'function'
-  },
-  {
-    'inputs': [],
-    'name': 'decimals',
-    'outputs': [{ 'internalType': 'uint8', 'name': '', 'type': 'uint8' }],
-    'stateMutability': 'view',
-    'type': 'function'
-  },
-  {
-    'inputs': [],
-    'name': 'symbol',
-    'outputs': [{ 'internalType': 'string', 'name': '', 'type': 'string' }],
-    'stateMutability': 'view',
-    'type': 'function'
+    name: 'approve',
+    outputs: [{ internalType: 'bool', name: '', type: 'bool' }],
+    stateMutability: 'nonpayable',
+    type: 'function'
   }
 ] as const
 
-// Интерфейс для информации об апруве
-interface ApprovalInfo {
-  token: string
-  tokenSymbol: string
-  spender: string
-  spenderName: string
-  allowance: bigint
-  allowanceFormatted: string
+// Общий ABI ERC-721/ERC-1155: isApprovedForAll + setApprovalForAll
+const NFT_APPROVAL_ABI = [
+  {
+    inputs: [
+      { internalType: 'address', name: 'owner', type: 'address' },
+      { internalType: 'address', name: 'operator', type: 'address' }
+    ],
+    name: 'isApprovedForAll',
+    outputs: [{ internalType: 'bool', name: '', type: 'bool' }],
+    stateMutability: 'view',
+    type: 'function'
+  },
+  {
+    inputs: [
+      { internalType: 'address', name: 'operator', type: 'address' },
+      { internalType: 'bool', name: 'approved', type: 'bool' }
+    ],
+    name: 'setApprovalForAll',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function'
+  }
+] as const
+
+// Одна задача отзыва: (контракт, спендер) + вид апрува
+interface RevokeTask {
+  kind: 'erc20' | 'nft'
+  contract: `0x${string}`
+  spender: `0x${string}`
+  label: string
 }
 
 // Результат отзыва одного апрува
@@ -83,174 +84,147 @@ interface RevokeResult {
   error?: string
 }
 
-/**
- * Находит все активные апрувы для указанного кошелька
- */
-async function findAllApprovals (
-  publicClient: ReturnType<typeof rpcManager.createPublicClient>,
-  walletAddress: `0x${string}`
-): Promise<ApprovalInfo[]> {
-  const approvals: ApprovalInfo[] = []
-  const tokenAddresses = Object.values(TOKENS)
-  const spenderAddresses = Object.values(SPENDERS)
-
-  // Проверяем все комбинации токенов и спендеров
-  for (const tokenAddress of tokenAddresses) {
-    try {
-      // Получаем decimals и symbol токена
-      let tokenDecimals = 18
-      let tokenSymbol = TOKEN_NAMES[tokenAddress] || 'UNKNOWN'
-
-      try {
-        const decimals = await publicClient.readContract({
-          address: tokenAddress as `0x${string}`,
-          abi: ERC20_ABI,
-          functionName: 'decimals'
-        }) as number
-
-        tokenDecimals = decimals
-
-        const symbol = await publicClient.readContract({
-          address: tokenAddress as `0x${string}`,
-          abi: ERC20_ABI,
-          functionName: 'symbol'
-        }) as string
-
-        if (symbol) {
-          tokenSymbol = symbol
-        }
-      } catch (err) {
-        // Используем значения по умолчанию
-        logger.debug(`revoke: не удалось получить данные токена, используем значения по умолчанию: ${err instanceof Error ? err.message : String(err)}`)
-      }
-
-      // Проверяем allowance для каждого спендера
-      for (const spenderAddress of spenderAddresses) {
-        try {
-          const allowance = await publicClient.readContract({
-            address: tokenAddress as `0x${string}`,
-            abi: ERC20_ABI,
-            functionName: 'allowance',
-            args: [walletAddress, spenderAddress as `0x${string}`]
-          }) as bigint
-
-          // Если allowance > 0, добавляем в список
-          if (allowance > 0n) {
-            const allowanceFormatted = formatUnits(allowance, tokenDecimals)
-            const spenderName = SPENDER_NAMES[spenderAddress] || spenderAddress.slice(0, 8) + '...'
-
-            approvals.push({
-              token: tokenAddress,
-              tokenSymbol,
-              spender: spenderAddress,
-              spenderName,
-              allowance,
-              allowanceFormatted
-            })
-          }
-        } catch (err) {
-          // Пропускаем ошибки при проверке конкретного спендера
-          logger.debug(`revoke: ошибка при проверке спендера, пропускаем: ${err instanceof Error ? err.message : String(err)}`)
-        }
-      }
-    } catch (err) {
-      // Пропускаем ошибки при работе с токеном
-      logger.debug(`revoke: ошибка при работе с токеном, пропускаем: ${err instanceof Error ? err.message : String(err)}`)
-    }
-  }
-
-  return approvals
+function shortAddr (addr: string): string {
+  return `${addr.slice(0, 8)}…`
 }
 
 /**
- * Отзывает один апрув (устанавливает approve в 0)
+ * Загружает апрувы кошелька из Rabby API и собирает план отзыва.
+ * Пары (контракт, спендер) дедуплицируются: в NFT-ответе пара повторяется
+ * на каждый token id коллекции.
+ */
+async function buildRevokeTasks (walletAddress: `0x${string}`): Promise<RevokeTask[]> {
+  const [tokens, nft] = await Promise.all([
+    getTokenAuthorizedList(walletAddress),
+    getNftAuthorizedList(walletAddress)
+  ])
+
+  const tasks: RevokeTask[] = []
+  const seen = new Set<string>()
+
+  const addTask = (kind: RevokeTask['kind'], contract: string, spender: string, label: string): void => {
+    if (!isAddress(contract) || !isAddress(spender)) return
+    const key = `${kind}:${contract.toLowerCase()}:${spender.toLowerCase()}`
+    if (seen.has(key)) return
+    seen.add(key)
+    tasks.push({
+      kind,
+      contract: contract.toLowerCase() as `0x${string}`,
+      spender: spender.toLowerCase() as `0x${string}`,
+      label
+    })
+  }
+
+  let erc20Count = 0
+  for (const token of tokens) {
+    const symbol = token.optimized_symbol || token.symbol || shortAddr(token.id)
+    for (const spender of token.spenders ?? []) {
+      addTask('erc20', token.id, spender.id, `${symbol} → ${shortAddr(spender.id)}`)
+      erc20Count++
+    }
+  }
+
+  for (const approval of nft.contracts) {
+    if (!approval.spender) continue
+    const name = approval.contract_name || shortAddr(approval.contract_id)
+    addTask('nft', approval.contract_id, approval.spender.id, `NFT ${name} → ${shortAddr(approval.spender.id)}`)
+  }
+
+  if (nft.tokens.length > 0) {
+    logger.warn(`Rabby вернул ${nft.tokens.length} одиночных NFT-апрувов (approve по token id) — их отзыв не поддерживается, пропускаем`)
+  }
+
+  logger.info(`Rabby: апрувов ERC-20: ${erc20Count}, NFT-коллекций: ${nft.contracts.length}, к отзыву после дедупликации: ${tasks.length}`)
+
+  return tasks
+}
+
+/**
+ * Отзывает один апрув. Перед отправкой перепроверяет состояние он-чейн —
+ * уже отозванный (или чужой) апрув пропускается без транзакции.
  */
 async function revokeApproval (
   publicClient: ReturnType<typeof rpcManager.createPublicClient>,
   walletClient: ReturnType<typeof rpcManager.createWalletClient>,
   account: ReturnType<typeof privateKeyToAccount>,
-  token: string,
-  spender: string,
-  tokenSymbol: string,
-  spenderName: string
+  task: RevokeTask
 ): Promise<RevokeResult> {
   try {
-    // Проверяем текущий allowance
-    const currentAllowance = await publicClient.readContract({
-      address: token as `0x${string}`,
-      abi: ERC20_ABI,
-      functionName: 'allowance',
-      args: [account.address, spender as `0x${string}`]
-    }) as bigint
+    if (task.kind === 'erc20') {
+      const allowance = await publicClient.readContract({
+        address: task.contract,
+        abi: ERC20_ABI,
+        functionName: 'allowance',
+        args: [account.address, task.spender]
+      }) as bigint
 
-    // Если allowance уже 0, пропускаем
-    if (currentAllowance === 0n) {
-      return {
-        success: true,
-        skipped: true
+      if (allowance === 0n) {
+        return { success: true, skipped: true }
+      }
+    } else {
+      const approved = await publicClient.readContract({
+        address: task.contract,
+        abi: NFT_APPROVAL_ABI,
+        functionName: 'isApprovedForAll',
+        args: [account.address, task.spender]
+      }) as boolean
+
+      if (!approved) {
+        return { success: true, skipped: true }
       }
     }
 
-    // Оцениваем газ
+    const writeParams = task.kind === 'erc20'
+      ? {
+          address: task.contract,
+          abi: ERC20_ABI,
+          functionName: 'approve',
+          args: [task.spender, 0n] as const
+        }
+      : {
+          address: task.contract,
+          abi: NFT_APPROVAL_ABI,
+          functionName: 'setApprovalForAll',
+          args: [task.spender, false] as const
+        }
+
     const estimatedGas = await publicClient.estimateContractGas({
-      address: token as `0x${string}`,
-      abi: ERC20_ABI,
-      functionName: 'approve',
-      args: [spender as `0x${string}`, 0n],
-      account: account
-    })
+      ...writeParams,
+      account
+    } as Parameters<typeof publicClient.estimateContractGas>[0])
 
     const gasLimit = BigInt(Math.floor(Number(estimatedGas) * 1.5))
 
-    // Отправляем транзакцию через safeWriteContract
     const txResult = await safeWriteContract(
       publicClient,
       walletClient,
       account.address,
       {
-        address: token as `0x${string}`,
-        abi: ERC20_ABI,
-        functionName: 'approve',
-        args: [spender as `0x${string}`, 0n],
+        ...writeParams,
         gas: gasLimit,
         chain: soneiumChain,
-        account: account
+        account
       }
     )
 
     if (!txResult.success) {
-      return {
-        success: false,
-        error: txResult.error || 'Ошибка отправки транзакции'
-      }
+      return { success: false, error: txResult.error || 'Ошибка отправки транзакции' }
     }
 
     const hash = txResult.hash
-
-    // Ждем подтверждения
     const receipt = await publicClient.waitForTransactionReceipt({ hash })
 
     if (receipt.status === 'success') {
       logger.transaction(hash, 'confirmed', 'REVOKE', account.address)
-
-      return {
-        success: true,
-        transactionHash: hash
-      }
-    } else {
-      logger.transaction(hash, 'failed', 'REVOKE', account.address)
-      return {
-        success: false,
-        error: 'Транзакция не подтверждена'
-      }
+      return { success: true, transactionHash: hash }
     }
+
+    logger.transaction(hash, 'failed', 'REVOKE', account.address)
+    return { success: false, error: 'Транзакция не подтверждена' }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка'
-    logger.error(`Ошибка при отзыве апрува ${tokenSymbol} → ${spenderName}: ${errorMessage}`)
-    return {
-      success: false,
-      error: errorMessage
-    }
+    logger.error(`Ошибка при отзыве апрува ${task.label}: ${errorMessage}`)
+    return { success: false, error: errorMessage }
   }
 }
 
@@ -292,10 +266,21 @@ export async function performRevoke (privateKey: `0x${string}`): Promise<{
       }
     }
 
-    // Находим все активные апрувы
-    const approvals = await findAllApprovals(publicClient, walletAddress)
+    // Получаем список апрувов из Rabby API; при недоступности API — ошибка модуля
+    let tasks: RevokeTask[]
+    try {
+      tasks = await buildRevokeTasks(walletAddress)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      logger.error(`Не удалось получить список апрувов: ${message}`)
+      return {
+        success: false,
+        walletAddress,
+        error: message
+      }
+    }
 
-    if (approvals.length === 0) {
+    if (tasks.length === 0) {
       logger.success('Активных апрувов не найдено')
       return {
         success: true,
@@ -313,36 +298,30 @@ export async function performRevoke (privateKey: `0x${string}`): Promise<{
     let errorCount = 0
     let lastTransactionHash: string | undefined
 
-    for (let i = 0; i < approvals.length; i++) {
-      const approval = approvals[i]!
+    for (let i = 0; i < tasks.length; i++) {
+      const task = tasks[i]!
 
-      const result = await revokeApproval(
-        publicClient,
-        walletClient,
-        account,
-        approval.token,
-        approval.spender,
-        approval.tokenSymbol,
-        approval.spenderName
-      )
+      const result = await revokeApproval(publicClient, walletClient, account, task)
 
       if (result.success) {
         if (result.skipped) {
           skippedCount++
+          logger.info(`Пропущено (уже отозван): ${task.label}`)
         } else {
           revokedCount++
+          logger.success(`Отозван апрув: ${task.label}`)
           if (result.transactionHash) {
             lastTransactionHash = result.transactionHash
           }
         }
       } else {
         errorCount++
-        logger.error(`Ошибка отзыва апрува: ${approval.tokenSymbol} → ${approval.spenderName} - ${result.error}`)
+        logger.error(`Ошибка отзыва апрува: ${task.label} - ${result.error}`)
       }
 
       // Задержка между транзакциями (кроме последней)
-      if (i < approvals.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 5000)) // 2 секунды
+      if (i < tasks.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_TX_MS))
       }
     }
 
@@ -352,7 +331,7 @@ export async function performRevoke (privateKey: `0x${string}`): Promise<{
       explorerUrl = `https://soneium.blockscout.com/tx/${lastTransactionHash}`
     }
 
-    logger.info(`Отозвано: ${revokedCount}, Пропущено: ${skippedCount}, Ошибок: ${errorCount} из ${approvals.length}`)
+    logger.info(`Отозвано: ${revokedCount}, Пропущено: ${skippedCount}, Ошибок: ${errorCount} из ${tasks.length}`)
 
     const overallSuccess = errorCount === 0 || revokedCount > 0
 
@@ -362,7 +341,7 @@ export async function performRevoke (privateKey: `0x${string}`): Promise<{
       ...(lastTransactionHash && { transactionHash: lastTransactionHash }),
       explorerUrl: explorerUrl ?? null,
       revokedCount,
-      totalCount: approvals.length,
+      totalCount: tasks.length,
       skippedCount
     }
   } catch (error) {
@@ -375,4 +354,3 @@ export async function performRevoke (privateKey: `0x${string}`): Promise<{
     }
   }
 }
-
