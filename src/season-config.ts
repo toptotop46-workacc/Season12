@@ -33,9 +33,9 @@ export const BONUS_COLUMN_OVERRIDES: Record<string, { header?: string, questHead
 }
 
 /** Минимальный процент от баланса ETH для свапа в USDC.e (через Jumper). Дробные значения допустимы, например 0.1 = 0.1%, 1 = 1%, 15 = 15%. */
-export const LIQUIDITY_SWAP_PERCENT_MIN = 1.1
+export const LIQUIDITY_SWAP_PERCENT_MIN = 0.1
 /** Максимальный процент от баланса ETH для свапа в USDC.e (через Jumper). Дробные значения допустимы. */
-export const LIQUIDITY_SWAP_PERCENT_MAX = 5.1
+export const LIQUIDITY_SWAP_PERCENT_MAX = 0.9
 
 /** Симулировать транзакцию перед отправкой (eth_call / simulateContract). Отключить при глючном RPC. */
 export const SIMULATE_BEFORE_SEND = true
@@ -55,10 +55,10 @@ export const STRICT_SIMULATION = true
  * - `txLabel` — метка для логов транзакций
  */
 export const BADGE_MINT_CONFIG: SeasonBadgeMintConfig = {
-  season: 10,
-  nftContract: '0x28DDd4926D0A40c8AFE191e3748FEbcF03e842Fa',
-  mintPhase1Date: new Date('2026-06-10T10:00:00+03:00'), // Stage 1 для 84-100
-  mintPhase2Date: new Date('2026-06-24T10:00:00+03:00'), // Stage 2 для 80-83
+  season: 11,
+  nftContract: '0x37E893d74B01807aF36697E95BeBd2FD9B297425',
+  mintPhase1Date: new Date('2026-07-08T10:00:00+03:00'), // Stage 1 для 84-100
+  mintPhase2Date: new Date('2026-07-22T10:00:00+03:00'), // Stage 2 для 80-83
   threshold: 80,
-  txLabel: 'SEASON10_BADGE_MINT'
+  txLabel: 'SEASON11_BADGE_MINT'
 }
